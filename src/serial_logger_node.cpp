@@ -1,29 +1,19 @@
-/**
-Software License Agreement (proprietary)
-
-\file      serial_logger_node.cpp
-\authors   Jeremy Xu <jxu@clearpathrobotics.com>
-\copyright Copyright (c) 2018, Clearpath Robotics, Inc., All rights reserved.
-
-Redistribution and use in source and binary forms, with or without modification, is not permitted without the
-express permission of Clearpath Robotics.
-*/
-
 #include "serial_logger/serial_logger_node.h"
 #include <string>
 
 SerialLoggerNode::SerialLoggerNode()
+: n_("")
 {
   // The publisher
   serial_pub_ = n_.advertise<std_msgs::String>("serial", 100);
 
   // Serial port initialization
   std::string port;
-  int baudrate, baudrate_in, charsize;
+  int baudrate, baudrate_in, datasize;
   bool stopbits, parity_enable, xonxoff, rtscts;
   ros::param::param<std::string>("~port", port, "/dev/ttyUSB0");
   ros::param::param<int>("~baudrate", baudrate_in, 115200);
-  ros::param::param<int>("~charsize", charsize, 8);
+  ros::param::param<int>("~datasize", datasize, 8);
   ros::param::param<bool>("~stopbits", stopbits, false);
   ros::param::param<bool>("~parityenable", parity_enable, false);
   ros::param::param<bool>("~xonxoff", xonxoff, false);
@@ -38,33 +28,23 @@ SerialLoggerNode::SerialLoggerNode()
   // Therefore the simpliest way to transfer is using a switch statement
   switch (baudrate_in)
   {
-    case 9600:
-      baudrate = B9600;  break;
-    case 19200:
-      baudrate = B19200;  break;
-    case 57600:
-      baudrate = B57600;  break;
-    case 115200:
-      baudrate = B115200;  break;
-    default:
-      ROS_ERROR_STREAM("Unknown baud rate, probably need to extend case statement");
+    case 9600: baudrate = B9600;  break;
+    case 19200: baudrate = B19200;  break;
+    case 57600: baudrate = B57600;  break;
+    case 115200: baudrate = B115200;  break;
+    default: ROS_ERROR_STREAM("Unknown baud rate, probably need to extend case statement");
   }
   cfsetospeed(&tty, (speed_t)baudrate);
   cfsetispeed(&tty, (speed_t)baudrate);
 
   tty.c_cflag  &=  ~CSIZE;  // CSIZE is a mask for the number of bits per character
-  switch (charsize)
+  switch (datasize)
   {
-    case 8:
-      tty.c_cflag  |=  CS8;  break;  // Set to 8 bits per character
-    case 7:
-      tty.c_cflag  |=  CS7;  break;
-    case 6:
-      tty.c_cflag  |=  CS6;  break;
-    case 5:
-      tty.c_cflag  |=  CS5;  break;
-    default:
-      ROS_ERROR_STREAM("Setting character size failed");
+    case 8: tty.c_cflag  |=  CS8;  break;  // Set to 8 bits per character
+    case 7: tty.c_cflag  |=  CS7;  break;
+    case 6: tty.c_cflag  |=  CS6;  break;
+    case 5: tty.c_cflag  |=  CS5;  break;
+    default: ROS_ERROR_STREAM("Setting character size failed");
   }
 
   if (parity_enable) tty.c_cflag  |=  PARENB;
@@ -87,7 +67,8 @@ SerialLoggerNode::SerialLoggerNode()
 
   // Flush port, then apply attributes
   tcflush(USB_port, TCIFLUSH);
-  if (tcsetattr (USB_port, TCSANOW, &tty) != 0) ROS_ERROR_STREAM("Error " << errno << " from tcsetattr");
+  if (tcsetattr (USB_port, TCSANOW, &tty) != 0)
+	ROS_ERROR_STREAM("Error " << errno << " from tcsetattr");
 }
 
 SerialLoggerNode::~SerialLoggerNode()
@@ -98,7 +79,7 @@ SerialLoggerNode::~SerialLoggerNode()
 void SerialLoggerNode::Run()
 {
   while (ros::ok())
-  {
+  {  // When shutting down with Ctrl+C, exiting speed could be slow, because of the blocking of read() function
     ssize_t num_bytes_read = 0;
     int response_index = 0;
     char buf = '\0';  // Temporary storage for the current character read
@@ -109,7 +90,7 @@ void SerialLoggerNode::Run()
     // Because we don't know length of each line of message, we read in char by char until we meet carriage return
     do
     {
-      num_bytes_read = read(USB_port, &buf, 1);
+      num_bytes_read = read(USB_port, &buf, 1);  //read() function in Open Group Library (not the istream read function)
       snprintf(&response[response_index], 100, "%c", buf);
       response_index += num_bytes_read;
     }
